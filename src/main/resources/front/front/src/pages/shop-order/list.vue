@@ -1,0 +1,373 @@
+<template>
+	<div :style='{"width":"1300px","padding":"20px","margin":"10px auto","position":"relative","background":"none"}'>
+		<div class="back_box">
+			<el-button class="backBtn" size="mini" @click="backClick">
+				<span class="icon iconfont icon-jiantou33"></span>
+				<span class="text">返回</span>
+			</el-button>
+		</div>
+		<div class="section-title" :style='{"padding":"0 0 0 180px","margin":"10px auto 30px","textAlign":"left","background":"url(http://codegen.caihongy.cn/20241215/eec2df959e904359912fcb41bdda5202.webp) no-repeat center / 100% 100%","width":"100%","lineHeight":"100px","fontSize":"36px","fontWeight":"700","height":"100px"}'>我的订单</div>
+		<el-tabs v-model="activeName" @tab-click="handleClick">
+			<el-tab-pane label="未支付" name="未支付"></el-tab-pane>
+			<el-tab-pane label="已支付" name="已支付"></el-tab-pane>
+			<el-tab-pane label="已完成" name="已完成"></el-tab-pane>
+			<el-tab-pane label="已退款" name="已退款"></el-tab-pane>
+			<el-tab-pane label="已取消" name="已取消"></el-tab-pane>
+		</el-tabs>
+		<el-table :data="tableData" style="width: 100%">
+			<el-table-column label="订单编号" prop="orderid"></el-table-column>
+			<el-table-column label="商品" align="center" width="200px">
+				<template slot-scope="scope">
+					<div class="shangpin">
+						<el-image style="width: 100px; height: 100px;flex: 1" :src="baseUrl + scope.row.picture" fit="fill"></el-image>
+						<span style="margin-left: 10px;flex: 1" >{{ scope.row.goodname }}</span>
+					</div>
+				</template>
+			</el-table-column>
+			<el-table-column label="价格">
+				<template slot-scope="scope">
+					<span v-if="(scope.row.type == 1 || scope.row.type == 3)&&scope.row.price>0"><span :style='{"fontSize":"12px"}'>￥</span>{{ scope.row.price }}</span>
+					<span v-if="scope.row.type == 2&&scope.row.price>0">{{ scope.row.price }}积分</span>
+				</template>
+			</el-table-column>
+			<el-table-column label="数量" prop="buynumber"></el-table-column>
+			<el-table-column label="总价">
+				<template slot-scope="scope">
+					<span v-if="(scope.row.type == 1 || scope.row.type == 3)&&scope.row.total>0"><span :style='{"fontSize":"12px"}'>￥</span>{{ scope.row.total }}</span>
+					<span v-if="scope.row.type == 2&&scope.row.total>0">{{ scope.row.total }}积分</span>
+				</template>
+			</el-table-column>
+			<el-table-column label="座位" prop="address"></el-table-column>
+			<el-table-column label="备注" prop="remark"></el-table-column>
+			<el-table-column label="操作" width="150">
+				<template slot-scope="scope">
+					<el-button v-show="activeName == '未支付'" type="success" :style='{"margin":"2px auto",}' size="mini" @click="pay(scope.row)">支付</el-button>
+					<el-button v-show="activeName == '已支付'" type="success" :style='{"margin":"2px auto",}' size="mini" @click="exchange(scope.row)">兑换</el-button>
+					<el-button v-show="activeName == '未支付'" type="danger" :style='{"margin":"2px auto",}' size="mini" @click="cancel(scope.row)">取消</el-button>
+					<el-button v-show="activeName == '已支付'" type="danger" :style='{"margin":"2px auto",}' size="mini" @click="refund(scope.row)">{{scope.row.total>0?'退款':'退订'}}</el-button>
+					<el-button v-show="activeName == '已完成'" type="primary" :style='{"margin":"2px auto",}' size="mini" @click="toDetail(scope.row)">评价</el-button>
+					<el-button v-show="activeName == '已发货'" type="success" :style='{"margin":"2px auto",}' size="mini" @click="confirm(scope.row)">确认收货</el-button>
+				</template>
+			</el-table-column>
+		</el-table>
+		<el-pagination
+			background
+			id="pagination" class="pagination"
+			:pager-count="7"
+			:page-size="pageSize"
+			:page-sizes="pageSizes"
+			prev-text="<"
+			next-text=">"
+			:hide-on-single-page="true"
+			:layout='["total","prev","pager","next","sizes","jumper"].join()'
+			:total="total"
+			:style='{"width":"1300px","padding":"0","margin":"20px auto","whiteSpace":"nowrap","color":"#333","fontWeight":"500"}'
+			@current-change="curChange"
+			@prev-click="prevClick"
+			@next-click="nextClick"
+			></el-pagination>
+
+	
+	</div>
+</template>
+
+<script>
+	import config from '@/config/config'
+	export default {
+		data() {
+			return {
+				layouts: '',
+				baseUrl: config.baseUrl,
+				activeName: '未支付',
+				tableData: [],
+				total: 1,
+				pageSize: 10,
+				pageSizes: [],
+				totalPage: 1,
+				session: {},
+				userTableName: localStorage.getItem('UserTableName'),
+			}
+		},
+		created() {
+			this.getSession();
+			this.getMyOrderList(1);
+		},
+		methods: {
+			backClick() {
+				this.$router.push('/index/center')
+			},
+			getSession() {
+				this.$http.get(this.userTableName+'/session', {emulateJSON: true}).then(res => {
+					if (res.data.code == 0) {
+						this.session = res.data.data;
+					}
+				});
+			},
+			handleClick(tab, event) {
+				tab.activeName = event.target.outerText;
+				this.getMyOrderList(1);
+			},
+			toDetail(row) {
+				this.$router.push({path: '/index/'+row.tablename+'Detail', query: {id: row.goodid}});
+			},
+			handleAction(index, row) {
+				if (index == '已支付' && this.session.money < row.total) {
+					this.$message.error('余额不足，请先充值');
+					return;
+				}
+	
+				row.status = index;
+				this.$http.post('orders/update', row).then(res => {
+					if (res.data.code == 0) {
+						if (index == '已支付') this.session.money -= row.total;
+						if (index == '已退款' && row.type == 1) this.session.money += row.total;
+						if (index == '已退款' && row.type == 2) this.session.jifen += row.total;
+						if (index == '已支付' || index == '已退款') {
+							this.session.money = this.session.money.toFixed(2);
+							this.$http.post(this.userTableName+'/update', this.session).then(res => {});
+						}
+						this.$message({
+							message: '操作成功',
+							type: 'success',
+							duration: 1500,
+							onClose: () => {
+								this.getMyOrderList(1);
+							}
+						});
+					}
+				});
+			},
+			// 退款
+			refund(item) {
+				this.$confirm(`${item.total>0?'确定退款吗？退款金额将返回账户中。':'是否退订？'}`, "提示", {
+					confirmButtonText: "确定",
+					cancelButtonText: "取消",
+					type: "warning"
+				}).then(() => {
+					// 获取商品详情信息
+					this.$http.get(item.tablename+'/info/'+item.goodid, {}).then(res => {
+						// 商品信息
+						let good = res.data.data;
+						// 用户当前用户信息
+						let table = localStorage.getItem("UserTableName");
+						this.$http.get(table+'/session', {}).then(res => {
+							this.user = res.data.data;
+							if(item.type==1||item.type==3) {
+								// 如果该商品存在积分
+								if (good.jf) {
+									this.user.jf = (Number(this.user.jf) - Number(item.total)).toFixed(2);
+								}
+								this.user.money = (Number(this.user.money) + Number(item.total)).toFixed(2);
+								// 更新用户余额
+								this.$http.post(table+'/update', this.user).then(res => {
+									item.status = '已退款'
+									localStorage.setItem('sessionForm',JSON.stringify(this.user))
+									this.$http.post(`orders/update`, item).then(res => {
+										let arr = item.address.split(',')
+										let brr = good.selected?good.selected.split(','):[]
+										for(let a in arr){
+											for(let b in brr){
+												if(brr[b]==arr[a]){
+													brr.splice(b,1)
+												}
+											}
+										}
+										good.selected = brr.join(',')
+										this.$http.post(`${item.tablename}/update`, good).then(res => {});
+										this.$message({
+											message: `${item.total>0?'退款成功':'退订成功'}`,
+											type: 'success',
+											duration: 1500,
+											onClose: () => {
+												this.getMyOrderList(1);
+											}
+										});
+									});
+								});
+							} else if(item.type==2) {
+								this.user.jf = Number(this.user.jf) + Number(item.total);
+								// 更新用户余额
+								this.$http.post(table+'/update', this.user).then(res => {
+									item.status = '已退款'
+									localStorage.setItem('sessionForm',JSON.stringify(this.user))
+									this.$http.post(`orders/update`, item).then(res => {
+										let arr = item.address.split(',')
+										let brr = good.selected?good.selected.split(','):[]
+										for(let a in arr){
+											for(let b in brr){
+												if(brr[b]==arr[a]){
+													brr.splice(b,1)
+												}
+											}
+										}
+										good.selected = brr.join(',')
+										this.$http.post(`${item.tablename}/update`, good).then(res => {});
+										this.$message({
+											message: `${item.total>0?'退款成功':'退订成功'}`,
+											type: 'success',
+											duration: 1500,
+											onClose: () => {
+												this.getMyOrderList(1);
+											}
+										});
+									});
+								});
+							}
+						});
+					});
+				});
+			},
+
+			// 支付
+			pay(item) {
+				// 获取商品详情信息
+				this.$http.get(item.tablename+'/info/'+item.goodid, {}).then(res => {
+					// 商品信息
+					let data = res.data.data;
+					// 用户当前用户信息
+					let table = localStorage.getItem("UserTableName");
+					this.$http.get(table+'/session', {}).then(res => {
+						this.user = res.data.data;
+						// 判断余额是否充足
+						if (Number(this.user.money) < Number(item.total)) {
+							this.$message({
+								message: '余额不足，请先充值',
+								type: 'error',
+								duration: 1500
+							});
+							return
+						}
+						// 如果该商品存在积分
+						if (data.jf) {
+							this.user.jf = Number((Number(this.user.jf) + Number(item.total)).toFixed(2));
+						}
+						this.user.money = Number((Number(this.user.money) - Number(item.total)).toFixed(2));
+						// 更新用户余额
+						this.$http.post(table+'/update', this.user).then(res => {
+							item.status = '已支付'
+							localStorage.setItem('sessionForm',JSON.stringify(this.user))
+							this.$http.post(`orders/update`, item).then(res => {
+								this.$message({
+									message: '支付成功',
+									type: 'success',
+									duration: 1500,
+									onClose: () => {
+										this.getMyOrderList(1);
+									}
+								});
+							});
+						});
+					});
+				});
+			},
+			confirm(item){
+				this.$confirm(`是否确定收货？`, "提示", {
+					confirmButtonText: "确定",
+					cancelButtonText: "取消",
+					type: "warning"
+				}).then(() => {
+					item.status = '已完成'
+					this.$http.post(`orders/update`, item).then(res => {
+						this.$message({
+							message: '确认收货成功',
+							type: 'success',
+							duration: 1500,
+							onClose: () => {
+								this.getMyOrderList(1);
+							}
+						});
+					});
+				});
+			},
+			cancel(item){
+				this.$confirm(`是否取消订单？`, "提示", {
+					confirmButtonText: "确定",
+					cancelButtonText: "取消",
+					type: "warning"
+				}).then(() => {
+					item.status = '已取消'
+					this.$http.post(`orders/update`, item).then(res => {
+						// 获取商品详情信息
+						this.$http.get(item.tablename+'/info/'+item.goodid, {}).then(res => {
+							// 商品信息
+							let good = res.data.data;
+							let arr = item.address.split(',')
+							let brr = good.selected?good.selected.split(','):[]
+							for(let a in arr){
+								for(let b in brr){
+									if(brr[b]==arr[a]){
+										brr.splice(b,1)
+									}
+								}
+							}
+							good.selected = brr.join(',')
+							this.$http.post(`${item.tablename}/update`, good).then(res => {
+							});
+							this.$message({
+								message: '订单取消成功',
+								type: 'success',
+								duration: 1500,
+								onClose: () => {
+									this.getMyOrderList(1);
+								}
+							});
+						});
+					});
+				});
+			},
+			exchange(item){
+				this.$confirm(`是否兑换？`, "提示", {
+					confirmButtonText: "确定",
+					cancelButtonText: "取消",
+					type: "warning"
+				}).then(() => {
+					item.status = '已完成'
+					this.$http.post(`orders/update`, item).then(res => {
+						this.$message({
+							message: '兑换成功',
+							type: 'success',
+							duration: 1500,
+							onClose: () => {
+								this.getMyOrderList(1);
+							}
+						});
+					});
+				});
+			},
+			getMyOrderList(page) {
+				this.$http.get('orders/list', {params: {page, limit: this.pageSize,sort:'addtime',order:'desc', userid: Number(localStorage.getItem('frontUserid')), status: this.activeName}}).then(res => {
+					if (res.data.code == 0) {
+						this.tableData = res.data.data.list;
+						this.total = res.data.data.total;
+						this.pageSize = Number(res.data.data.pageSize);
+						this.totalPage = res.data.data.totalPage;
+						if(this.pageSizes.length==0){
+							this.pageSizes = [this.pageSize, this.pageSize*2, this.pageSize*3, this.pageSize*5];
+						}
+					}
+				});
+			},
+			curChange(page) {
+				this.getMyOrderList(page);
+			},
+			prevClick(page) {
+				this.getMyOrderList(page);
+			},
+			nextClick(page) {
+				this.getMyOrderList(page);
+			}
+		}
+	}
+</script>
+
+<style rel="stylesheet/scss" lang="scss" scoped>
+	.section {
+		width: 1000px;
+		margin: 0 auto;
+	}
+
+	.shangpin {
+		display: flex;
+	}
+	
+</style>
